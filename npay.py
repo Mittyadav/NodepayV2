@@ -5,9 +5,10 @@ import uuid
 from curl_cffi import requests
 from loguru import logger
 from fake_useragent import UserAgent
-from utils.banner import banner
 from colorama import Fore, Style, init
 from datetime import datetime
+from pyfiglet import figlet_format
+from termcolor import colored
 
 init()
 
@@ -35,11 +36,20 @@ last_ping_time = {}
 def uuidv4():
     return str(uuid.uuid4())
 
-def show_banner():
-    print(Fore.MAGENTA + banner + Style.RESET_ALL)
+def print_header():
+    ascii_art = figlet_format("NODEPAYBOT V.2", font="slant")
+    colored_art = colored(ascii_art, color="cyan")
+    border = "=" * 40
 
-def show_copyright():
-    print(Fore.MAGENTA + Style.BRIGHT + banner + Style.RESET_ALL)
+    print(border)
+    print(colored_art)
+    print(colored("by dark life", color="cyan", attrs=["bold"]))
+    print("\nWelcome to NodepayBot - Automate your tasks effortlessly!")
+
+def log_message(message, color):
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    timestamp_colored = Fore.MAGENTA + timestamp + Style.RESET_ALL  # Pink color for timestamp
+    print(timestamp_colored + color + f" {message}" + Style.RESET_ALL)
 
 def valid_resp(resp):
     if not resp or "code" not in resp or resp["code"] < 0:
@@ -148,7 +158,9 @@ async def ping(proxy, token):
 
         response = await call_api(DOMAIN_API["PING"], data, proxy, token)
         if response["code"] == 0:
-            log_message(f"Ping SUCCESSFUL for {proxy} - IP Score {response['data']['ip_score']}", Fore.GREEN)
+            ip_score = response['data']['ip_score']
+            ip_score_colored = Fore.CYAN + f"IP Score: {ip_score}" + Style.RESET_ALL  # Sky Blue color for IP Score
+            log_message(f"{Fore.GREEN}Ping SUCCESSFUL{Style.RESET_ALL} for {proxy} - {ip_score_colored}", Fore.GREEN)
             RETRIES = 0
             status_connect = CONNECTION_STATES["CONNECTED"]
         else:
@@ -167,7 +179,7 @@ async def call_api(url, data, proxy, token):
     }
 
     try:
-        response = requests.post(url, json=data, headers=headers, impersonate="safari15_5", proxies={
+        response = requests.post(url, json=data, headers=headers, impersonate="safari15_5", proxies={ 
             "http": proxy, "https": proxy}, timeout=15)
 
         response.raise_for_status()
@@ -253,12 +265,8 @@ async def main():
             await asyncio.sleep(3)
     await asyncio.sleep(10)
 
-def log_message(message, color):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    print(color + f"[{timestamp}] {message}" + Style.RESET_ALL)
-
 if __name__ == '__main__':
-    show_copyright()
+    print_header()  # Display the banner with multicolors
     log_message("RUNNING WITH PROXIES", Fore.WHITE)
     try:
         asyncio.run(main())
