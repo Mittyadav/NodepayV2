@@ -17,10 +17,12 @@ RETRIES = 60
 TOKEN_FILE = 'tokens.txt'
 PROXY_FILE = 'proxy.txt'
 DOMAIN_API = {
-    "SESSION": "http://api.nodepay.ai/api/auth/session",
-    "PING": "https://nw.nodepay.org/api/network/ping",
-    "DAILY_CLAIM": "https://api.nodepay.org/api/mission/complete-mission"
+        "SESSION": "http://api.nodepay.ai/api/auth/session",
+    "PING": ["https://nw.nodepay.org/api/network/ping"],
+    "DAILY_CLAIM": "https://api.nodepay.org/api/mission/complete-mission",
+    "DEVICE_NETWORK": "https://api.nodepay.org/api/network/device-networks"
 }
+
 
 CONNECTION_STATES = {
     "CONNECTED": 1,
@@ -78,7 +80,7 @@ def dailyclaim(token):
     url = DOMAIN_API["DAILY_CLAIM"]
     headers = {
         "Authorization": f"Bearer {token}",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
         "Content-Type": "application/json",
         "Origin": "https://app.nodepay.ai",
         "Referer": "https://app.nodepay.ai/",
@@ -172,10 +174,17 @@ async def ping(proxy, token):
 async def call_api(url, data, proxy, token):
     headers = {
         "Authorization": f"Bearer {token}",
-        "Content-Type": "application/json",
-        "Origin": "chrome-extension://lgmpfmgeabnnlemejacfljbmonaomfmm",
-        "Accept": "*/*",
-        "Accept-Language": "en-US,en;q=0.5",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Referer": "https://app.nodepay.ai/",
+            "Accept": "application/json, text/plain, */*",
+            "Origin": "chrome-extension://lgmpfmgeabnnlemejacfljbmonaomfmm",
+            "Sec-Ch-Ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "cors-site"
     }
 
     try:
