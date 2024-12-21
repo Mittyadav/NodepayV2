@@ -5,10 +5,9 @@ import uuid
 from curl_cffi import requests
 from loguru import logger
 from fake_useragent import UserAgent
+from utils.banner import banner
 from colorama import Fore, Style, init
 from datetime import datetime
-from pyfiglet import figlet_format
-from termcolor import colored
 
 init()
 
@@ -17,12 +16,10 @@ RETRIES = 60
 TOKEN_FILE = 'tokens.txt'
 PROXY_FILE = 'proxy.txt'
 DOMAIN_API = {
-        "SESSION": "http://api.nodepay.ai/api/auth/session",
-    "PING": ["https://nw.nodepay.org/api/network/ping"],
-    "DAILY_CLAIM": "https://api.nodepay.org/api/mission/complete-mission",
-    "DEVICE_NETWORK": "https://api.nodepay.org/api/network/device-networks"
+    "SESSION": "http://api.nodepay.ai/api/auth/session",
+    "PING": "https://nw.nodepay.org/api/network/ping",
+    "DAILY_CLAIM": "https://api.nodepay.org/api/mission/complete-mission"
 }
-
 
 CONNECTION_STATES = {
     "CONNECTED": 1,
@@ -38,20 +35,11 @@ last_ping_time = {}
 def uuidv4():
     return str(uuid.uuid4())
 
-def print_header():
-    ascii_art = figlet_format("NODEPAYBOT V.2", font="slant")
-    colored_art = colored(ascii_art, color="cyan")
-    border = "=" * 40
+def show_banner():
+    print(Fore.MAGENTA + banner + Style.RESET_ALL)
 
-    print(border)
-    print(colored_art)
-    print(colored("by dark life", color="cyan", attrs=["bold"]))
-    print("\nWelcome to NodepayBot - Automate your tasks effortlessly!")
-
-def log_message(message, color):
-    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    timestamp_colored = Fore.MAGENTA + timestamp + Style.RESET_ALL  # Pink color for timestamp
-    print(timestamp_colored + color + f" {message}" + Style.RESET_ALL)
+def show_copyright():
+    print(Fore.MAGENTA + Style.BRIGHT + banner + Style.RESET_ALL)
 
 def valid_resp(resp):
     if not resp or "code" not in resp or resp["code"] < 0:
@@ -80,7 +68,7 @@ def dailyclaim(token):
     url = DOMAIN_API["DAILY_CLAIM"]
     headers = {
         "Authorization": f"Bearer {token}",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
         "Content-Type": "application/json",
         "Origin": "https://app.nodepay.ai",
         "Referer": "https://app.nodepay.ai/",
@@ -160,9 +148,7 @@ async def ping(proxy, token):
 
         response = await call_api(DOMAIN_API["PING"], data, proxy, token)
         if response["code"] == 0:
-            ip_score = response['data']['ip_score']
-            ip_score_colored = Fore.CYAN + f"IP Score: {ip_score}" + Style.RESET_ALL  # Sky Blue color for IP Score
-            log_message(f"{Fore.GREEN}Ping SUCCESSFUL{Style.RESET_ALL} for {proxy} - {ip_score_colored}", Fore.GREEN)
+            log_message(f"Ping SUCCESSFUL for {proxy} - IP Score {response['data']['ip_score']}", Fore.GREEN)
             RETRIES = 0
             status_connect = CONNECTION_STATES["CONNECTED"]
         else:
@@ -174,21 +160,14 @@ async def ping(proxy, token):
 async def call_api(url, data, proxy, token):
     headers = {
         "Authorization": f"Bearer {token}",
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Referer": "https://app.nodepay.ai/",
-            "Accept": "application/json, text/plain, */*",
-            "Origin": "chrome-extension://lgmpfmgeabnnlemejacfljbmonaomfmm",
-            "Sec-Ch-Ua": '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"',
-            "Sec-Ch-Ua-Mobile": "?0",
-            "Sec-Ch-Ua-Platform": '"Windows"',
-            "sec-fetch-dest": "empty",
-            "sec-fetch-mode": "cors",
-            "sec-fetch-site": "cors-site"
+        "Content-Type": "application/json",
+        "Origin": "chrome-extension://lgmpfmgeabnnlemejacfljbmonaomfmm",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.5",
     }
 
     try:
-        response = requests.post(url, json=data, headers=headers, impersonate="safari15_5", proxies={ 
+        response = requests.post(url, json=data, headers=headers, impersonate="safari15_5", proxies={
             "http": proxy, "https": proxy}, timeout=15)
 
         response.raise_for_status()
@@ -274,8 +253,12 @@ async def main():
             await asyncio.sleep(3)
     await asyncio.sleep(10)
 
+def log_message(message, color):
+    timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    print(color + f"[{timestamp}] {message}" + Style.RESET_ALL)
+
 if __name__ == '__main__':
-    print_header()  # Display the banner with multicolors
+    show_copyright()
     log_message("RUNNING WITH PROXIES", Fore.WHITE)
     try:
         asyncio.run(main())
