@@ -1,25 +1,31 @@
-import requests as reqs
 import asyncio
+import json
+import os
+import random
+import sys
 import time
 import uuid
+from urllib.parse import urlparse
+
+import cloudscraper
+import requests
 from curl_cffi import requests
 from loguru import logger
-from fake_useragent import UserAgent
-from colorama import Fore, Style, init
-from datetime import datetime
 from pyfiglet import figlet_format
 from termcolor import colored
 
-init()
+
+# Global configuration
+SHOW_REQUEST_ERROR_LOG = False
 
 PING_INTERVAL = 60
 RETRIES = 60
-TOKEN_FILE = 'tokens.txt'
-PROXY_FILE = 'proxy.txt'
+
 DOMAIN_API = {
-    "SESSION": "http://api.nodepay.ai/api/auth/session",
-    "PING": "https://nw.nodepay.org/api/network/ping",
-    "DAILY_CLAIM": "https://api.nodepay.org/api/mission/complete-mission"
+        "SESSION": "http://api.nodepay.ai/api/auth/session",
+    "PING": ["https://nw.nodepay.org/api/network/ping"],
+    "DAILY_CLAIM": "https://api.nodepay.org/api/mission/complete-mission",
+    "DEVICE_NETWORK": "https://api.nodepay.org/api/network/device-networks"
 }
 
 CONNECTION_STATES = {
@@ -28,10 +34,21 @@ CONNECTION_STATES = {
     "NONE_CONNECTION": 3
 }
 
-status_connect = CONNECTION_STATES["NONE_CONNECTION"]
-browser_id = None
+status_connect = CONNECTION_STATES
 account_info = {}
 last_ping_time = {}
+token_status = {}
+browser_id = None
+
+# Setup logger
+logger.remove()
+logger.add(
+    sink=sys.stdout,
+    format="<r>[Nodepay]</r> | <white>{time:YYYY-MM-DD HH:mm:ss}</white> | "
+           "<level>{level: ^7}</level> | <cyan>{line: <3}</cyan> | {message}",
+    colorize=True
+)
+logger = logger.opt(colors=True)
 
 def uuidv4():
     return str(uuid.uuid4())
