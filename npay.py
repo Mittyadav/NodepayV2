@@ -12,6 +12,7 @@ from datetime import datetime
 init()
 
 PING_INTERVAL = 60
+MAX_ACTIVE_PROXIES = 3
 RETRIES = 60
 TOKEN_FILE = 'tokens.txt'
 PROXY_FILE = 'proxy.txt'
@@ -77,9 +78,7 @@ def dailyclaim(token):
         "Connection": "keep-alive",
         "Upgrade-Insecure-Requests": "1"
     }
-    data = {
-        "mission_id": "1"
-    }
+    data = {"mission_id": "1"}
 
     try:
         response = requests.post(url, headers=headers, json=data, timeout=15)
@@ -98,65 +97,6 @@ def dailyclaim(token):
         log_message(f"Error in dailyclaim: {e}", Fore.RED)
         return False
 
-def is_valid_proxy(proxy):
-    return True
-
-def load_session_info(proxy):
-    return {}
-
-def save_session_info(proxy, data):
-    pass
-
-def save_status(proxy, status):
-    pass
-
-def handle_logout(proxy):
-    global status_connect, account_info
-    status_connect = CONNECTION_STATES["NONE_CONNECTION"]
-    account_info = {}
-    save_status(proxy, None)
-    log_message(f"Logged out and cleared session info for proxy {proxy}", Fore.RED)
-
-async def start_ping(proxy, token):
-    try:
-        while True:
-            await ping(proxy, token)
-            await asyncio.sleep(PING_INTERVAL)
-    except asyncio.CancelledError:
-        log_message(f"Ping task for proxy {proxy} was cancelled", Fore.YELLOW)
-    except Exception as e:
-        log_message(f"Error in start_ping for proxy {proxy}: {e}", Fore.RED)
-
-async def ping(proxy, token):
-    global last_ping_time, RETRIES, status_connect
-
-    current_time = time.time()
-
-    if proxy in last_ping_time and (current_time - last_ping_time[proxy]) < PING_INTERVAL:
-        log_message(f"Skipping ping for proxy {proxy}, not enough time elapsed", Fore.YELLOW)
-        return
-
-    last_ping_time[proxy] = current_time
-
-    try:
-        data = {
-            "id": account_info.get("uid"),
-            "browser_id": browser_id,
-            "timestamp": int(time.time()),
-            "version": "2.2.7"
-        }
-
-        response = await call_api(DOMAIN_API["PING"], data, proxy, token)
-        if response["code"] == 0:
-            log_message(f"Ping SUCCESSFUL for {proxy} - IP Score {response['data']['ip_score']}", Fore.GREEN)
-            RETRIES = 0
-            status_connect = CONNECTION_STATES["CONNECTED"]
-        else:
-            handle_ping_fail(proxy, response)
-    except Exception as e:
-        log_message(f"Ping failed via proxy {proxy}: {e}", Fore.RED)
-        handle_ping_fail(proxy, None)
-
 async def call_api(url, data, proxy, token):
     headers = {
         "Authorization": f"Bearer {token}",
@@ -167,11 +107,24 @@ async def call_api(url, data, proxy, token):
     }
 
     try:
-        response = requests.post(url, json=data, headers=headers, impersonate="safari15_5", proxies={
-            "http": proxy, "https": proxy}, timeout=15)
-
+        response = requests.post(
+            url,
+            json=data,
+            headers=headers,
+            impersonate="safari15_5",
+            proxies={"http": proxy, "https": proxy},
+            timeout=15
+        )
         response.raise_for_status()
         return valid_resp(response.json())
+
+    except requests.HTTPError as http_err:
+        if response.status_code == 403:
+            log_message(f"HTTP 403: Access denied for proxy {proxy} or token {token}.", Fore.RED)
+            return {"blocked": True}  # Mark as blocked
+        log_message(f"HTTP error for proxy {proxy}: {http_err}", Fore.RED)
+        raise
+
     except Exception as e:
         log_message(f"Error during API call to {url} via proxy {proxy}: {e}", Fore.RED)
         raise ValueError(f"Failed API call to {url}")
@@ -180,76 +133,74 @@ async def render_profile_info(proxy, token):
     global browser_id, account_info
 
     try:
-        np_session_info = load_session_info(proxy)
-
-        if not np_session_info:
-            browser_id = uuidv4()
-            response = await call_api(DOMAIN_API["SESSION"], {}, proxy, token)
-            valid_resp(response)
-            account_info = response["data"]
-            if account_info.get("uid"):
-                save_session_info(proxy, account_info)
-                await start_ping(proxy, token)
-            else:
-                handle_logout(proxy)
+        browser_id = uuidv4()
+        response = await call_api(DOMAIN_API["SESSION"], {}, proxy, token)
+        valid_resp(response)
+        account_info = response["data"]
+        if account_info.get("uid"):
+            log_message(f"Profile info loaded for proxy {proxy}.", Fore.GREEN)
+            return True
         else:
-            account_info = np_session_info
-            await start_ping(proxy, token)
+            log_message(f"Failed to load profile info for proxy {proxy}.", Fore.RED)
+            return None
     except Exception as e:
         log_message(f"Error in render_profile_info for proxy {proxy}: {e}", Fore.RED)
-        return proxy  # Return the failed proxy
+        return "blocked"
 
 async def main():
     all_proxies = load_proxies(PROXY_FILE)
+    failed_proxies = set()
+    failed_tokens = set()
 
     tokens = load_tokens_from_file(TOKEN_FILE)
     if not tokens:
-        log_message("Token cannot be empty. Exiting the program.", Fore.RED)
+        log_message("Token file is empty. Exiting the program.", Fore.RED)
         exit()
     if not all_proxies:
-        log_message("Proxies cannot be empty. Exiting the program.", Fore.RED)
+        log_message("Proxy file is empty. Exiting the program.", Fore.RED)
         exit()
 
-    # Max active proxies
-    MAX_ACTIVE_PROXIES = 3
-    failed_proxies = set()
-
     for token in tokens:
-        log_message("Performing daily claim...", Fore.YELLOW)
-        dailyclaim(token)
+        if token in failed_tokens:
+            continue  # Skip failed tokens
+        log_message(f"Performing daily claim with token {token}...", Fore.YELLOW)
+        if not dailyclaim(token):
+            log_message(f"Token {token} failed during daily claim.", Fore.RED)
+            failed_tokens.add(token)
 
     while True:
         active_proxies = [
-            proxy for proxy in all_proxies if is_valid_proxy(proxy) and proxy not in failed_proxies][:MAX_ACTIVE_PROXIES]
+            proxy for proxy in all_proxies if proxy not in failed_proxies][:MAX_ACTIVE_PROXIES]
 
         if not active_proxies:
             log_message("No active proxies available. Exiting the program.", Fore.RED)
             exit()
 
-        tasks = {asyncio.create_task(render_profile_info(proxy, token)): proxy for proxy in active_proxies}
+        tasks = {asyncio.create_task(render_profile_info(proxy, token)): proxy for proxy in active_proxies for token in tokens if token not in failed_tokens}
 
-        done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
+        done, _ = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
         for task in done:
-            failed_proxy = tasks[task]
+            proxy = tasks[task]
             try:
                 result = task.result()
-                if result is None:
-                    log_message(f"Proxy {failed_proxy} failed. Removing it from the active list.", Fore.RED)
-                    failed_proxies.add(failed_proxy)
-                else:
-                    log_message(f"Proxy {failed_proxy} is working fine.", Fore.GREEN)
+                if result == "blocked":
+                    log_message(f"Proxy {proxy} or token caused a block. Removing it.", Fore.RED)
+                    failed_proxies.add(proxy)
+                elif result is None:
+                    log_message(f"Proxy {proxy} failed. Removing it.", Fore.RED)
+                    failed_proxies.add(proxy)
             except Exception as e:
-                log_message(f"Error with proxy {failed_proxy}: {e}", Fore.RED)
-                failed_proxies.add(failed_proxy)
-            finally:
-                tasks.pop(task)
+                log_message(f"Error with proxy {proxy}: {e}", Fore.RED)
+                failed_proxies.add(proxy)
 
-        # Remove failed proxies from the main list
         all_proxies = [proxy for proxy in all_proxies if proxy not in failed_proxies]
+        tokens = [token for token in tokens if token not in failed_tokens]
+
+        if not all_proxies or not tokens:
+            log_message("No valid proxies or tokens left. Exiting.", Fore.RED)
+            exit()
 
         await asyncio.sleep(3)
-
-    await asyncio.sleep(10)
 
 def log_message(message, color):
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
