@@ -1,4 +1,5 @@
 import requests as reqs
+import aiohttp
 import asyncio
 import time
 import uuid
@@ -166,15 +167,14 @@ async def call_api(url, data, proxy, token):
         "Accept-Language": "en-US,en;q=0.5",
     }
 
-    try:
-        response = requests.post(url, json=data, headers=headers, impersonate="safari15_5", proxies={
-            "http": proxy, "https": proxy}, timeout=15)
-
-        response.raise_for_status()
-        return valid_resp(response.json())
-    except Exception as e:
-        log_message(f"Error during API call to {url} via proxy {proxy}: {e}", Fore.RED)
-        raise ValueError(f"Failed API call to {url}")
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(url, json=data, headers=headers, proxy=f"http://{proxy}", timeout=15) as response:
+                response.raise_for_status()
+                return valid_resp(await response.json())
+        except Exception as e:
+            log_message(f"Error during API call to {url} via proxy {proxy}: {e}", Fore.RED)
+            raise ValueError(f"Failed API call to {url}")
 
 async def render_profile_info(proxy, token):
     global browser_id, account_info
