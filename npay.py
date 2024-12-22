@@ -197,17 +197,7 @@ async def render_profile_info(proxy, token):
             await start_ping(proxy, token)
     except Exception as e:
         log_message(f"Error in render_profile_info for proxy {proxy}: {e}", Fore.RED)
-        error_message = str(e)
-        if any(phrase in error_message for phrase in [
-            "sent 1011 (internal error) keepalive ping timeout; no close frame received",
-            "500 Internal Server Error"
-        ]):
-            log_message(f"Removing error proxy from the list: {proxy}", Fore.RED)
-            remove_proxy_from_list(proxy)
-            return None
-        else:
-            log_message(f"Connection error: {e}", Fore.RED)
-            return proxy
+        return proxy  # Return the failed proxy
 
 async def main():
     all_proxies = load_proxies(PROXY_FILE)
@@ -220,37 +210,45 @@ async def main():
         log_message("Proxies cannot be empty. Exiting the program.", Fore.RED)
         exit()
 
+    # Max active proxies
+    MAX_ACTIVE_PROXIES = 3
+    failed_proxies = set()
+
     for token in tokens:
         log_message("Performing daily claim...", Fore.YELLOW)
         dailyclaim(token)
 
     while True:
-        for token in tokens:
-            active_proxies = [
-                proxy for proxy in all_proxies if is_valid_proxy(proxy)][:100]
-            tasks = {asyncio.create_task(render_profile_info(
-                proxy, token)): proxy for proxy in active_proxies}
+        active_proxies = [
+            proxy for proxy in all_proxies if is_valid_proxy(proxy) and proxy not in failed_proxies][:MAX_ACTIVE_PROXIES]
 
-            done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
-            for task in done:
-                failed_proxy = tasks[task]
-                if task.result() is None:
-                    log_message(f"Removing and replacing failed proxy: {failed_proxy}", Fore.RED)
-                    active_proxies.remove(failed_proxy)
-                    if all_proxies:
-                        new_proxy = all_proxies.pop(0)
-                        if is_valid_proxy(new_proxy):
-                            active_proxies.append(new_proxy)
-                            new_task = asyncio.create_task(
-                                render_profile_info(new_proxy, token))
-                            tasks[new_task] = new_proxy
+        if not active_proxies:
+            log_message("No active proxies available. Exiting the program.", Fore.RED)
+            exit()
+
+        tasks = {asyncio.create_task(render_profile_info(proxy, token)): proxy for proxy in active_proxies}
+
+        done, pending = await asyncio.wait(tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            failed_proxy = tasks[task]
+            try:
+                result = task.result()
+                if result is None:
+                    log_message(f"Proxy {failed_proxy} failed. Removing it from the active list.", Fore.RED)
+                    failed_proxies.add(failed_proxy)
+                else:
+                    log_message(f"Proxy {failed_proxy} is working fine.", Fore.GREEN)
+            except Exception as e:
+                log_message(f"Error with proxy {failed_proxy}: {e}", Fore.RED)
+                failed_proxies.add(failed_proxy)
+            finally:
                 tasks.pop(task)
 
-            for proxy in set(active_proxies) - set(tasks.values()):
-                new_task = asyncio.create_task(
-                    render_profile_info(proxy, token))
-                tasks[new_task] = proxy
-            await asyncio.sleep(3)
+        # Remove failed proxies from the main list
+        all_proxies = [proxy for proxy in all_proxies if proxy not in failed_proxies]
+
+        await asyncio.sleep(3)
+
     await asyncio.sleep(10)
 
 def log_message(message, color):
